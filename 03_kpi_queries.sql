@@ -1,100 +1,85 @@
 USE electricity_revenue_sql;
 
--- 1. Monthly billing, collection and collection efficiency
+-- 1. Overall portfolio KPI summary
 SELECT
-    b.bill_month,
-    ROUND(SUM(b.total_bill_amount), 2) AS total_billed,
-    ROUND(COALESCE(SUM(p.amount_paid), 0), 2) AS total_collected,
-    ROUND(COALESCE(SUM(p.amount_paid), 0) / NULLIF(SUM(b.total_bill_amount), 0) * 100, 2) AS collection_rate_pct
-FROM bills b
-LEFT JOIN payments p ON p.bill_id = b.bill_id
-GROUP BY b.bill_month
-ORDER BY b.bill_month;
+    COUNT(*) AS total_accounts,
+    ROUND(SUM(total_billing), 2) AS total_billing,
+    ROUND(SUM(total_receipting), 2) AS total_receipting,
+    ROUND(SUM(total_90_debt), 2) AS total_90_debt,
+    ROUND(SUM(total_write_off), 2) AS total_write_off,
+    ROUND(SUM(total_receipting) / NULLIF(SUM(total_billing), 0) * 100, 2) AS weighted_collection_rate_pct,
+    ROUND(AVG(bad_debt) * 100, 2) AS bad_debt_rate_pct,
+    ROUND(AVG(has_id_no) * 100, 2) AS has_id_coverage_pct
+FROM electricity_revenue_analysis;
 
--- 2. Revenue leakage by region
+-- 2. Category-wise revenue and debt summary
 SELECT
-    r.region_name,
-    ROUND(SUM(b.total_bill_amount), 2) AS billed_amount,
-    ROUND(COALESCE(SUM(p.amount_paid), 0), 2) AS collected_amount,
-    ROUND(SUM(b.total_bill_amount) - COALESCE(SUM(p.amount_paid), 0), 2) AS revenue_leakage,
-    ROUND((SUM(b.total_bill_amount) - COALESCE(SUM(p.amount_paid), 0)) / NULLIF(SUM(b.total_bill_amount), 0) * 100, 2) AS leakage_pct
-FROM bills b
-JOIN customers c ON c.customer_id = b.customer_id
-JOIN regions r ON r.region_id = c.region_id
-LEFT JOIN payments p ON p.bill_id = b.bill_id
-GROUP BY r.region_name
-ORDER BY revenue_leakage DESC;
+    account_category,
+    COUNT(*) AS accounts,
+    ROUND(SUM(total_billing), 2) AS total_billing,
+    ROUND(SUM(total_receipting), 2) AS total_receipting,
+    ROUND(SUM(total_90_debt), 2) AS total_90_debt,
+    ROUND(SUM(total_write_off), 2) AS total_write_off,
+    ROUND(SUM(total_receipting) / NULLIF(SUM(total_billing), 0) * 100, 2) AS collection_rate_pct,
+    ROUND(AVG(bad_debt) * 100, 2) AS bad_debt_rate_pct
+FROM electricity_revenue_analysis
+GROUP BY account_category
+ORDER BY total_90_debt DESC;
 
--- 3. Category-wise billing and arrears exposure
+-- 3. Collection performance by ID availability
 SELECT
-    c.account_category,
-    ROUND(SUM(b.total_bill_amount), 2) AS billed_amount,
-    ROUND(COALESCE(SUM(p.amount_paid), 0), 2) AS collected_amount,
-    ROUND(SUM(b.total_bill_amount) - COALESCE(SUM(p.amount_paid), 0), 2) AS outstanding_amount
-FROM bills b
-JOIN customers c ON c.customer_id = b.customer_id
-LEFT JOIN payments p ON p.bill_id = b.bill_id
-GROUP BY c.account_category
-ORDER BY outstanding_amount DESC;
+    CASE WHEN has_id_no = 1 THEN 'Has ID' ELSE 'No ID' END AS id_status,
+    COUNT(*) AS accounts,
+    ROUND(SUM(total_billing), 2) AS total_billing,
+    ROUND(SUM(total_receipting), 2) AS total_receipting,
+    ROUND(SUM(total_90_debt), 2) AS total_90_debt,
+    ROUND(SUM(total_receipting) / NULLIF(SUM(total_billing), 0) * 100, 2) AS collection_rate_pct,
+    ROUND(AVG(bad_debt) * 100, 2) AS bad_debt_rate_pct
+FROM electricity_revenue_analysis
+GROUP BY has_id_no
+ORDER BY bad_debt_rate_pct DESC;
 
--- 4. Top recoverable accounts by unpaid amount
+-- 4. Top 20 high-risk consumer records by debt exposure
 SELECT
-    c.customer_no,
-    c.customer_name,
-    c.account_category,
-    r.region_name,
-    ROUND(SUM(b.total_bill_amount), 2) AS billed_amount,
-    ROUND(COALESCE(SUM(p.amount_paid), 0), 2) AS collected_amount,
-    ROUND(SUM(b.total_bill_amount) - COALESCE(SUM(p.amount_paid), 0), 2) AS recoverable_amount
-FROM bills b
-JOIN customers c ON c.customer_id = b.customer_id
-JOIN regions r ON r.region_id = c.region_id
-LEFT JOIN payments p ON p.bill_id = b.bill_id
-GROUP BY c.customer_no, c.customer_name, c.account_category, r.region_name
-HAVING recoverable_amount > 0
-ORDER BY recoverable_amount DESC
-LIMIT 10;
+    record_id,
+    account_category,
+    acc_cat_abbr,
+    total_billing,
+    total_receipting,
+    total_90_debt,
+    total_write_off,
+    collection_ratio,
+    debt_billing_ratio,
+    has_id_no,
+    bad_debt
+FROM electricity_revenue_analysis
+ORDER BY total_90_debt DESC, collection_ratio ASC
+LIMIT 20;
 
--- 5. Accounts with zero or weak collection performance
+-- 5. Categories with the largest recoverable revenue gap
 SELECT
-    c.customer_no,
-    c.customer_name,
-    ROUND(SUM(b.total_bill_amount), 2) AS total_billed,
-    ROUND(COALESCE(SUM(p.amount_paid), 0), 2) AS total_paid,
-    ROUND(COALESCE(SUM(p.amount_paid), 0) / NULLIF(SUM(b.total_bill_amount), 0) * 100, 2) AS collection_ratio_pct
-FROM customers c
-JOIN bills b ON b.customer_id = c.customer_id
-LEFT JOIN payments p ON p.bill_id = b.bill_id
-GROUP BY c.customer_no, c.customer_name
-HAVING collection_ratio_pct < 60
-ORDER BY collection_ratio_pct ASC, total_billed DESC;
+    account_category,
+    ROUND(SUM(total_billing - total_receipting), 2) AS recoverable_revenue_gap,
+    ROUND(AVG(collection_ratio), 2) AS avg_collection_ratio,
+    ROUND(AVG(debt_billing_ratio), 2) AS avg_debt_billing_ratio
+FROM electricity_revenue_analysis
+GROUP BY account_category
+ORDER BY recoverable_revenue_gap DESC;
 
--- 6. Overdue accounts needing field action
+-- 6. Write-off concentration by account category
 SELECT
-    c.customer_no,
-    c.customer_name,
-    c.has_id_proof,
-    b.bill_month,
-    b.total_bill_amount,
-    COALESCE(SUM(p.amount_paid), 0) AS amount_paid,
-    b.total_bill_amount - COALESCE(SUM(p.amount_paid), 0) AS overdue_amount,
-    DATEDIFF(CURDATE(), b.due_date) AS days_past_due
-FROM bills b
-JOIN customers c ON c.customer_id = b.customer_id
-LEFT JOIN payments p ON p.bill_id = b.bill_id
-GROUP BY c.customer_no, c.customer_name, c.has_id_proof, b.bill_month, b.total_bill_amount, b.due_date
-HAVING overdue_amount > 0
-ORDER BY overdue_amount DESC, days_past_due DESC;
+    account_category,
+    ROUND(SUM(total_write_off), 2) AS total_write_off,
+    ROUND(SUM(total_write_off) / NULLIF(SUM(total_billing), 0) * 100, 2) AS write_off_to_billing_pct
+FROM electricity_revenue_analysis
+GROUP BY account_category
+HAVING total_write_off > 0
+ORDER BY total_write_off DESC;
 
--- 7. Meter issue impact on revenue realization
+-- 7. Data quality and anomaly check
 SELECT
-    mr.meter_status,
-    COUNT(*) AS reading_count,
-    ROUND(SUM(b.total_bill_amount), 2) AS billed_amount,
-    ROUND(COALESCE(SUM(p.amount_paid), 0), 2) AS collected_amount,
-    ROUND((SUM(b.total_bill_amount) - COALESCE(SUM(p.amount_paid), 0)), 2) AS unpaid_amount
-FROM meter_readings mr
-JOIN bills b ON b.reading_id = mr.reading_id
-LEFT JOIN payments p ON p.bill_id = b.bill_id
-GROUP BY mr.meter_status
-ORDER BY unpaid_amount DESC;
+    SUM(CASE WHEN collection_ratio < 0 THEN 1 ELSE 0 END) AS negative_collection_ratio_rows,
+    SUM(CASE WHEN collection_ratio > 1.5 THEN 1 ELSE 0 END) AS unusually_high_collection_ratio_rows,
+    SUM(CASE WHEN total_billing < 0 THEN 1 ELSE 0 END) AS negative_billing_rows,
+    SUM(CASE WHEN property_value = 0 THEN 1 ELSE 0 END) AS zero_property_value_rows
+FROM electricity_revenue_analysis;
