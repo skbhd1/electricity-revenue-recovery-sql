@@ -5,7 +5,6 @@ A business-focused MySQL analytics project built on **real electricity revenue d
 This project extends my earlier electricity analytics work in **Python**, **Power BI**, and **machine learning** by showing how the same problem can be solved directly in **SQL**.
 
 ---
-
 ## 🚀 Project Overview
 
 Electricity utilities need more than dashboards. They need strong SQL analysis to answer questions like:
@@ -108,3 +107,14 @@ electricity-revenue-recovery-sql/
 ├── 05_run_project.sql
 ├── electricity_revenue_analysis.csv
 └── README.md
+---
+
+## 👤 Author
+
+**Shaik Abdullah**  
+Data Analyst | Revenue Operations | SQL | Python | Power BI | Machine Learning
+
+- [LinkedIn](https://www.linkedin.com/in/skbhd1-abdullah/)
+- [GitHub](https://github.com/skbhd1)
+- Email: skbhd1@gmail.com
+
