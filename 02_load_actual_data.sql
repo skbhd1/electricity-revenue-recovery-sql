@@ -2,7 +2,7 @@ USE electricity_revenue_sql;
 
 TRUNCATE TABLE electricity_revenue_analysis;
 
-LOAD DATA LOCAL INFILE 'dataset/electricity_revenue_analysis.csv'
+LOAD DATA LOCAL INFILE 'electricity_revenue_analysis.csv'
 INTO TABLE electricity_revenue_analysis
 FIELDS TERMINATED BY ','
 OPTIONALLY ENCLOSED BY '"'
